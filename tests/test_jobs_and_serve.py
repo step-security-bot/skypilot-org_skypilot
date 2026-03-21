@@ -21,8 +21,12 @@ from sky.utils.db import db_utils
 def test_job_nonexist_strategy():
     """Test the nonexist recovery strategy.
 
-    This function is testing for the core functions on server side.
+    Client-side validation is lenient for unknown strategies (they may
+    be registered by server-side plugins). The ValueError is raised on
+    the server side when the strategy is looked up in the registry.
     """
+    from sky.utils import registry
+
     task_yaml = textwrap.dedent("""\
         resources:
             cloud: aws
@@ -31,10 +35,16 @@ def test_job_nonexist_strategy():
     with tempfile.NamedTemporaryFile(mode='w') as f:
         f.write(task_yaml)
         f.flush()
-        with pytest.raises(ValueError,
-                           match='is not a valid jobs recovery strategy among'):
-            task = sky.Task.from_yaml(f.name)
-            task.validate()
+        # Client-side: should NOT raise (defers to server for
+        # plugin-provided strategies)
+        task = sky.Task.from_yaml(f.name)
+        task.validate()
+
+    # Server-side: registry lookup raises ValueError for strategies
+    # not registered (this is what StrategyExecutor.make() calls).
+    with pytest.raises(ValueError,
+                       match='is not a valid jobs recovery strategy among'):
+        registry.JOBS_RECOVERY_STRATEGY_REGISTRY.from_str('nonexist')
 
 
 @pytest.fixture
